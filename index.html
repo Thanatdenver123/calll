@@ -682,60 +682,30 @@
             // Fetch master data from Google Sheets first
             await fetchMasterData();
             
-            // Wait for SDK to be available
-            let attempts = 0;
-            const maxAttempts = 50; // 5 seconds max wait
-            
-            while (!window.dataSdk && attempts < maxAttempts) {
-                await new Promise(resolve => setTimeout(resolve, 100));
-                attempts++;
-            }
-            
-            if (!window.dataSdk) {
-                showError("ไม่สามารถโหลด Data SDK ได้ กรุณารีเฟรชหน้าเว็บ");
-                return;
-            }
-            
-            try {
-                const initResult = await window.dataSdk.init(dataHandler);
-                if (!initResult.isOk) {
-                    showError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้: " + (initResult.error?.message || 'Unknown error'));
-                    return;
-                }
-                
-                console.log('✅ Data SDK เชื่อมต่อสำเร็จ');
-            } catch (error) {
-                console.error('Data SDK initialization error:', error);
-                showError("เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล: " + error.message);
+            const initResult = await window.dataSdk.init(dataHandler);
+            if (!initResult.isOk) {
+                showError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
                 return;
             }
 
             // Initialize Element SDK
             if (window.elementSdk) {
-                try {
-                    await window.elementSdk.init({
-                        defaultConfig,
-                        render: async (config) => {
-                            const titleElement = document.getElementById('system-title');
-                            if (titleElement) {
-                                titleElement.textContent = config.system_title || defaultConfig.system_title;
-                            }
-                        },
-                        mapToCapabilities: (config) => ({
-                            recolorables: [],
-                            borderables: [],
-                            fontEditable: undefined,
-                            fontSizeable: undefined
-                        }),
-                        mapToEditPanelValues: (config) => new Map([
-                            ["system_title", config.system_title || defaultConfig.system_title],
-                            ["company_name", config.company_name || defaultConfig.company_name]
-                        ])
-                    });
-                    console.log('✅ Element SDK เชื่อมต่อสำเร็จ');
-                } catch (error) {
-                    console.warn('Element SDK initialization failed:', error);
-                }
+                await window.elementSdk.init({
+                    defaultConfig,
+                    render: async (config) => {
+                        document.getElementById('system-title').textContent = config.system_title || defaultConfig.system_title;
+                    },
+                    mapToCapabilities: (config) => ({
+                        recolorables: [],
+                        borderables: [],
+                        fontEditable: undefined,
+                        fontSizeable: undefined
+                    }),
+                    mapToEditPanelValues: (config) => new Map([
+                        ["system_title", config.system_title || defaultConfig.system_title],
+                        ["company_name", config.company_name || defaultConfig.company_name]
+                    ])
+                });
             }
         }
 
@@ -962,13 +932,6 @@
                     return;
                 }
 
-                // Check if Data SDK is available
-                if (!window.dataSdk || !window.dataSdk.create) {
-                    hideLoading();
-                    showError("ระบบฐานข้อมูลไม่พร้อม กรุณารีเฟรชหน้าเว็บแล้วลองใหม่");
-                    return;
-                }
-
                 // Save to local Data SDK first
                 console.log('กำลังบันทึกข้อมูลใน Canva Sheet...');
                 const result = await window.dataSdk.create(recordData);
@@ -1133,33 +1096,23 @@
 
         // Update status
         async function updateStatus(recordId, newStatus) {
-            if (!window.dataSdk || !window.dataSdk.update) {
-                showError("ระบบฐานข้อมูลไม่พร้อม");
-                return;
-            }
-            
             const record = currentRecords.find(r => r.__backendId === recordId);
             if (record) {
                 record.approvalStatus = newStatus;
                 const result = await window.dataSdk.update(record);
                 if (!result.isOk) {
-                    showError("ไม่สามารถอัปเดตสถานะได้: " + (result.error?.message || 'Unknown error'));
+                    showError("ไม่สามารถอัปเดตสถานะได้");
                 }
             }
         }
 
         // Delete record
         async function deleteRecord(recordId) {
-            if (!window.dataSdk || !window.dataSdk.delete) {
-                showError("ระบบฐานข้อมูลไม่พร้อม");
-                return;
-            }
-            
             const record = currentRecords.find(r => r.__backendId === recordId);
             if (record) {
                 const result = await window.dataSdk.delete(record);
                 if (!result.isOk) {
-                    showError("ไม่สามารถลบข้อมูลได้: " + (result.error?.message || 'Unknown error'));
+                    showError("ไม่สามารถลบข้อมูลได้");
                 }
             }
         }
@@ -1195,13 +1148,7 @@
         // Confirm clear all data
         async function confirmClearAll() {
             // Remove confirmation modal
-            const modal = document.querySelector('.fixed.inset-0');
-            if (modal) modal.remove();
-            
-            if (!window.dataSdk || !window.dataSdk.delete) {
-                showError("ระบบฐานข้อมูลไม่พร้อม");
-                return;
-            }
+            document.querySelector('.fixed.inset-0').remove();
             
             showLoading();
             
@@ -1211,15 +1158,9 @@
                 
                 // Delete all records one by one
                 for (const record of currentRecords) {
-                    try {
-                        const result = await window.dataSdk.delete(record);
-                        if (result.isOk) {
-                            deletedCount++;
-                        } else {
-                            console.warn('Failed to delete record:', record.__backendId, result.error);
-                        }
-                    } catch (deleteError) {
-                        console.error('Delete error for record:', record.__backendId, deleteError);
+                    const result = await window.dataSdk.delete(record);
+                    if (result.isOk) {
+                        deletedCount++;
                     }
                 }
                 
@@ -1603,8 +1544,8 @@
                 html += `<div class="mt-3 p-3 rounded-lg ${allGood ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
                     <strong>${allGood ? '✅ ระบบพร้อมใช้งาน' : '⚠️ ระบบใช้งานได้บางส่วน'}</strong><br>
                     ${allGood ? 
-                        'ข้อมูลจะบันทึกใน Canva Sheet และส่งไป Google Sheets' : 
-                        'ข้อมูลจะบันทึกใน Canva Sheet เท่านั้น (Google Sheets อาจมีปัญหา)'}
+                        'ข้อมูลจะบันทึกใน Sheet และส่งไป Google Sheets' : 
+                        'ข้อมูลจะบันทึกใน Sheet เท่านั้น (Google Sheets อาจมีปัญหา)'}
                 </div>`;
                 
                 // Instructions
@@ -1820,164 +1761,101 @@
             const modal = document.createElement('div');
             modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4';
             modal.innerHTML = `
-                <div class="bg-white rounded-lg p-6 max-w-5xl max-h-full overflow-y-auto">
+                <div class="bg-white rounded-lg p-6 max-w-4xl max-h-full overflow-y-auto">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-xl font-bold text-gray-800">🔧 แก้ไข Error 400 (Bad Request) - คู่มือครบถ้วน</h3>
+                        <h3 class="text-xl font-bold text-gray-800">🔧 คู่มือตั้งค่าเซิร์ฟเวอร์สำหรับอัปโหลดรูปภาพ</h3>
                         <button onclick="this.parentElement.parentElement.parentElement.remove()" class="text-gray-500 hover:text-gray-700 text-2xl">×</button>
                     </div>
                     
-                    <div class="mb-4 p-4 bg-red-100 border border-red-300 rounded-lg">
-                        <h4 class="font-bold text-red-800 mb-2">❗ ต้นเหตุของ Error 400 (Bad Request)</h4>
-                        <p class="text-red-700 text-sm">มักเกิดจากอย่างใดอย่างหนึ่งใน 3 กลุ่มต่อไปนี้ 👇</p>
-                    </div>
-                    
                     <div class="space-y-6 text-sm">
-                        <!-- Step 1: PHP Settings -->
-                        <div class="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
-                            <h4 class="font-bold text-blue-800 mb-3">🔍 1. ตรวจค่าขนาดไฟล์ใน PHP (php.ini)</h4>
-                            <p class="text-blue-700 mb-3">เปิดไฟล์ <code class="bg-blue-200 px-1 rounded">php.ini</code> แล้วค้นหาค่าต่อไปนี้:</p>
-                            <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto mb-3">
+                        <!-- PHP.INI Settings -->
+                        <div class="bg-blue-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-blue-800 mb-2">📋 การตั้งค่า php.ini</h4>
+                            <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto">
 upload_max_filesize = 8M<br>
 post_max_size = 8M<br>
 max_execution_time = 60<br>
-max_input_time = 60
+max_input_time = 60<br>
+memory_limit = 128M
                             </div>
-                            <div class="bg-yellow-100 border border-yellow-300 p-3 rounded mb-3">
-                                <p class="text-yellow-800 font-medium">✅ แนะนำให้ตั้งอย่างน้อย 8M</p>
-                                <p class="text-red-700 font-medium">❗ ถ้า post_max_size เล็กกว่า upload_max_filesize → ระบบจะตอบ 400 ทันที</p>
-                            </div>
-                            <div class="space-y-2">
-                                <p class="font-medium text-blue-800">หลังแก้ไข ต้อง รีสตาร์ท Apache หรือ XAMPP:</p>
-                                <p class="text-blue-700">• ถ้าใช้ XAMPP → Stop และ Start "Apache" ใหม่</p>
-                                <p class="text-blue-700">• ถ้าใช้ Linux → <code class="bg-gray-200 px-1 rounded">sudo systemctl restart apache2</code></p>
-                            </div>
-                            <div class="mt-3 p-3 bg-green-100 border border-green-300 rounded">
-                                <p class="font-medium text-green-800">ตรวจสอบว่าค่าถูกต้องโดยสร้างไฟล์ phpinfo.php:</p>
-                                <div class="bg-gray-800 text-green-400 p-2 rounded font-mono text-xs mt-2">
-&lt;?php phpinfo(); ?&gt;
-                                </div>
-                                <p class="text-green-700 text-xs mt-2">แล้วเปิดในเบราว์เซอร์ ดูว่าค่า upload_max_filesize กับ post_max_size ถูกอัปเดตแล้วหรือยัง</p>
-                            </div>
+                            <p class="mt-2 text-blue-700">หลังแก้ไขแล้วให้รีสตาร์ท Apache/Nginx และ PHP-FPM</p>
                         </div>
 
-                        <!-- Step 2: Web Server Settings -->
-                        <div class="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
-                            <h4 class="font-bold text-green-800 mb-3">🧱 2. ตรวจว่าเซิร์ฟเวอร์รับคำขอใหญ่ได้ไหม</h4>
-                            
-                            <!-- Apache -->
-                            <div class="mb-4">
-                                <p class="font-medium text-green-800 mb-2">👉 ถ้าใช้ Apache:</p>
-                                <p class="text-green-700 mb-2">เปิดไฟล์ <code class="bg-green-200 px-1 rounded">.htaccess</code> (อยู่ในโฟลเดอร์เดียวกับ PHP) แล้วเพิ่มบรรทัดนี้:</p>
-                                <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto mb-2">
+                        <!-- .htaccess for Apache -->
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-green-800 mb-2">🌐 การตั้งค่า .htaccess (Apache + mod_php)</h4>
+                            <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto">
 php_value upload_max_filesize 8M<br>
-php_value post_max_size 8M
-                                </div>
-                                <div class="bg-red-100 border border-red-300 p-2 rounded">
-                                    <p class="text-red-700 text-xs">ถ้า Apache ไม่อนุญาตให้ใช้คำสั่ง php_value (จะขึ้น 500 Error)<br>
-                                    → ให้ลบออก แล้วแก้ใน php.ini เท่านั้น</p>
-                                </div>
+php_value post_max_size 8M<br>
+php_value max_execution_time 60<br>
+php_value max_input_time 60
                             </div>
+                            <p class="mt-2 text-green-700">⚠️ ใช้ได้เฉพาะ mod_php เท่านั้น (ไม่ใช่ PHP-FPM)</p>
+                        </div>
 
-                            <!-- Nginx -->
-                            <div class="mb-4">
-                                <p class="font-medium text-green-800 mb-2">👉 ถ้าใช้ Nginx:</p>
-                                <p class="text-green-700 mb-2">เปิดไฟล์ <code class="bg-green-200 px-1 rounded">/etc/nginx/nginx.conf</code> หรือไฟล์ site แล้วเพิ่มในบล็อก server:</p>
-                                <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto mb-2">
+                        <!-- Nginx Settings -->
+                        <div class="bg-purple-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-purple-800 mb-2">🚀 การตั้งค่า Nginx</h4>
+                            <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto">
 server {<br>
 &nbsp;&nbsp;&nbsp;&nbsp;client_max_body_size 8M;<br>
+&nbsp;&nbsp;&nbsp;&nbsp;client_body_timeout 60s;<br>
 &nbsp;&nbsp;&nbsp;&nbsp;# ... other settings<br>
 }
-                                </div>
-                                <p class="text-green-700">แล้ว <code class="bg-gray-200 px-1 rounded">sudo systemctl reload nginx</code></p>
                             </div>
+                            <p class="mt-2 text-purple-700">หลังแก้ไขให้รัน: <code class="bg-gray-200 px-1 rounded">sudo nginx -t && sudo systemctl reload nginx</code></p>
                         </div>
 
-                        <!-- Step 3: Form Validation -->
-                        <div class="bg-purple-50 p-4 rounded-lg border-l-4 border-purple-500">
-                            <h4 class="font-bold text-purple-800 mb-3">🧩 3. ตรวจว่าฟอร์มส่งไฟล์ถูกต้องไหม</h4>
-                            <p class="text-purple-700 mb-2">ใน <code class="bg-purple-200 px-1 rounded">&lt;form&gt;</code> ต้องมี ทั้งสองส่วนนี้:</p>
-                            <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto mb-3">
-&lt;form action="upload.php" method="post" enctype="multipart/form-data"&gt;
-                            </div>
-                            <div class="bg-red-100 border border-red-300 p-3 rounded">
-                                <p class="text-red-700 font-medium">ถ้าไม่มี <code class="bg-red-200 px-1 rounded">enctype="multipart/form-data"</code></p>
-                                <p class="text-red-700">→ PHP จะรับไฟล์ไม่ได้ ($_FILES ว่างเปล่า)</p>
-                                <p class="text-red-700">→ และบางเซิร์ฟเวอร์ตอบกลับ 400 Bad Request ทันที</p>
-                            </div>
-                        </div>
-
-                        <!-- Step 4: PHP Test Code -->
-                        <div class="bg-orange-50 p-4 rounded-lg border-l-4 border-orange-500">
-                            <h4 class="font-bold text-orange-800 mb-3">🧾 4. ตรวจโค้ด PHP ที่รับไฟล์</h4>
-                            <p class="text-orange-700 mb-2">ลองใช้โค้ดสั้น ๆ ทดสอบก่อนว่า PHP รับไฟล์ได้ไหม:</p>
-                            <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto mb-3">
-&lt;?php<br>
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {<br>
-&nbsp;&nbsp;&nbsp;&nbsp;echo '&lt;pre&gt;';<br>
-&nbsp;&nbsp;&nbsp;&nbsp;print_r($_FILES);<br>
-&nbsp;&nbsp;&nbsp;&nbsp;echo '&lt;/pre&gt;';<br>
-} else {<br>
-?&gt;<br>
-&lt;form method="post" enctype="multipart/form-data"&gt;<br>
-&nbsp;&nbsp;&lt;input type="file" name="file"&gt;<br>
-&nbsp;&nbsp;&lt;button type="submit"&gt;Upload&lt;/button&gt;<br>
-&lt;/form&gt;<br>
-&lt;?php } ?&gt;
-                            </div>
+                        <!-- Error Codes -->
+                        <div class="bg-red-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-red-800 mb-2">❌ รหัสข้อผิดพลาดที่พบบ่อย</h4>
                             <div class="space-y-2">
-                                <p class="text-orange-700">• อัปโหลดรูปเล็ก ๆ (เช่น < 500 KB)</p>
-                                <p class="text-green-700">• ถ้าอัปโหลดได้ → PHP ทำงานถูก</p>
-                                <p class="text-red-700">• ถ้าเจอ "Error 400" หรือหน้าเปล่า → แปลว่า Apache หรือ PHP ปฏิเสธ request ตั้งแต่ก่อนถึงสคริปต์</p>
+                                <div><strong>Error 400:</strong> ข้อมูล POST ใหญ่เกิน post_max_size</div>
+                                <div><strong>Error 413:</strong> ไฟล์ใหญ่เกิน client_max_body_size (Nginx)</div>
+                                <div><strong>Error 500:</strong> PHP timeout หรือ memory_limit ไม่พอ</div>
+                                <div><strong>Upload failed:</strong> upload_max_filesize เล็กเกินไป</div>
                             </div>
                         </div>
 
-                        <!-- Step 5: Log Files -->
-                        <div class="bg-yellow-50 p-4 rounded-lg border-l-4 border-yellow-500">
-                            <h4 class="font-bold text-yellow-800 mb-3">🧠 5. ตรวจ log</h4>
-                            <p class="text-yellow-700 mb-2">เช็กไฟล์ log ตามระบบที่ใช้:</p>
-                            <div class="space-y-2 mb-3">
-                                <p class="text-yellow-700">• <strong>XAMPP:</strong> <code class="bg-yellow-200 px-1 rounded">xampp/apache/logs/error.log</code></p>
-                                <p class="text-yellow-700">• <strong>Apache (Linux):</strong> <code class="bg-yellow-200 px-1 rounded">/var/log/apache2/error.log</code></p>
-                                <p class="text-yellow-700">• <strong>Nginx:</strong> <code class="bg-yellow-200 px-1 rounded">/var/log/nginx/error.log</code></p>
-                            </div>
-                            <p class="text-yellow-700 mb-2">เปิดไฟล์นี้แล้วดูบรรทัดล่าสุด จะเห็นสาเหตุชัด เช่น:</p>
-                            <div class="bg-gray-800 text-red-400 p-3 rounded font-mono text-xs overflow-x-auto">
-Request Entity Too Large<br>
-mod_security: Access denied<br>
-POST Content-Length of 5234567 bytes exceeds limit of 2097152 bytes
+                        <!-- Debugging -->
+                        <div class="bg-yellow-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-yellow-800 mb-2">🔍 การดีบัก</h4>
+                            <div class="space-y-2">
+                                <div><strong>ตรวจสอบ PHP:</strong> สร้างไฟล์ <code class="bg-gray-200 px-1 rounded">info.php</code> ใส่ <code class="bg-gray-200 px-1 rounded">&lt;?php phpinfo(); ?&gt;</code></div>
+                                <div><strong>Log Files:</strong></div>
+                                <ul class="ml-4 list-disc">
+                                    <li>Apache: <code class="bg-gray-200 px-1 rounded">/var/log/apache2/error.log</code></li>
+                                    <li>Nginx: <code class="bg-gray-200 px-1 rounded">/var/log/nginx/error.log</code></li>
+                                    <li>PHP: <code class="bg-gray-200 px-1 rounded">/var/log/php_errors.log</code></li>
+                                </ul>
                             </div>
                         </div>
 
-                        <!-- Step 6: Temporary Solution -->
-                        <div class="bg-indigo-50 p-4 rounded-lg border-l-4 border-indigo-500">
-                            <h4 class="font-bold text-indigo-800 mb-3">🧰 6. ทางออกชั่วคราว (เพื่อทดสอบ)</h4>
-                            <p class="text-indigo-700 mb-2">เพิ่มบรรทัดนี้ไว้ตอนต้น <code class="bg-indigo-200 px-1 rounded">upload.php</code> เพื่อให้แน่ใจว่า PHP ยอมรับค่าใหม่:</p>
-                            <div class="bg-gray-800 text-green-400 p-3 rounded font-mono text-xs overflow-x-auto">
-ini_set('upload_max_filesize', '8M');<br>
-ini_set('post_max_size', '8M');<br>
-ini_set('max_input_time', '60');<br>
-ini_set('max_execution_time', '60');
+                        <!-- Shared Hosting -->
+                        <div class="bg-orange-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-orange-800 mb-2">🏠 Shared Hosting</h4>
+                            <div class="space-y-2">
+                                <div>• ใช้ Control Panel (cPanel, Plesk) เพื่อแก้ไข PHP Settings</div>
+                                <div>• บางโฮสติ้งอาจจำกัดค่าสูงสุด ให้ติดต่อฝ่ายสนับสนุน</div>
+                                <div>• ลองใช้ <code class="bg-gray-200 px-1 rounded">ini_set()</code> ใน PHP script</div>
                             </div>
                         </div>
 
-                        <!-- Quick Diagnostic -->
-                        <div class="bg-gray-50 p-4 rounded-lg border-2 border-gray-300">
-                            <h4 class="font-bold text-gray-800 mb-3">🔧 การวินิจฉัยด่วน</h4>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-                                <div class="space-y-2">
-                                    <p class="font-medium text-gray-800">ขั้นตอนการแก้ไข:</p>
-                                    <p class="text-gray-700">1. แก้ php.ini → รีสตาร์ท Apache</p>
-                                    <p class="text-gray-700">2. ตรวจ phpinfo() ว่าค่าเปลี่ยนแล้ว</p>
-                                    <p class="text-gray-700">3. ทดสอบด้วยไฟล์เล็ก (< 1MB)</p>
-                                    <p class="text-gray-700">4. ดู error log หาสาเหตุ</p>
-                                    <p class="text-gray-700">5. ใช้ ini_set() ชั่วคราว</p>
+                        <!-- Current System Status -->
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <h4 class="font-bold text-gray-800 mb-2">📊 สถานะระบบปัจจุบัน</h4>
+                            <div class="grid grid-cols-2 gap-4 text-xs">
+                                <div>
+                                    <strong>ขีดจำกัดไฟล์:</strong><br>
+                                    • Browser: 8 MB<br>
+                                    • บีบอัดเป็น: &lt; 200 KB<br>
+                                    • รองรับ: JPG, PNG, WebP, GIF
                                 </div>
-                                <div class="space-y-2">
-                                    <p class="font-medium text-gray-800">สัญญาณที่ต้องระวัง:</p>
-                                    <p class="text-red-600">• Error 400 ทันทีที่อัปโหลด</p>
-                                    <p class="text-red-600">• $_FILES ว่างเปล่า</p>
-                                    <p class="text-red-600">• หน้าเว็บค้างหรือ timeout</p>
-                                    <p class="text-red-600">• ไฟล์เล็กอัปโหลดได้ แต่ไฟล์ใหญ่ไม่ได้</p>
+                                <div>
+                                    <strong>การประมวลผล:</strong><br>
+                                    • ลดขนาดอัตโนมัติ<br>
+                                    • บีบอัด 4 ขั้นตอน<br>
+                                    • ตรวจสอบความปลอดภัย
                                 </div>
                             </div>
                         </div>
@@ -2003,25 +1881,8 @@ ini_set('max_execution_time', '60');
         // Make test function available globally for console testing
         window.testSimpleRecord = testSimpleRecord;
 
-        // Show SDK loading status
-        function showSDKStatus() {
-            const statusDiv = document.getElementById('system-status');
-            if (statusDiv) {
-                if (!window.dataSdk) {
-                    statusDiv.className = 'mt-6 p-4 bg-yellow-100 border border-yellow-300 rounded-lg text-center';
-                    statusDiv.innerHTML = '<span class="text-yellow-800 font-medium">🔄 กำลังโหลดระบบ...</span>';
-                } else {
-                    statusDiv.className = 'mt-6 p-4 bg-green-100 border border-green-300 rounded-lg text-center';
-                    statusDiv.innerHTML = '<span class="text-green-800 font-medium">✅ ระบบพร้อมใช้งาน</span>';
-                }
-            }
-        }
-
         // Initialize app when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            showSDKStatus();
-            initializeApp();
-        });
+        document.addEventListener('DOMContentLoaded', initializeApp);
     </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'991f33112705894b',t:'MTc2MTAzMzM5OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'99200c05f2568960',t:'MTc2MTA0MjI4NC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

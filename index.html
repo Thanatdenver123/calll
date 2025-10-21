@@ -682,30 +682,60 @@
             // Fetch master data from Google Sheets first
             await fetchMasterData();
             
-            const initResult = await window.dataSdk.init(dataHandler);
-            if (!initResult.isOk) {
-                showError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้");
+            // Wait for SDK to be available
+            let attempts = 0;
+            const maxAttempts = 50; // 5 seconds max wait
+            
+            while (!window.dataSdk && attempts < maxAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                attempts++;
+            }
+            
+            if (!window.dataSdk) {
+                showError("ไม่สามารถโหลด Data SDK ได้ กรุณารีเฟรชหน้าเว็บ");
+                return;
+            }
+            
+            try {
+                const initResult = await window.dataSdk.init(dataHandler);
+                if (!initResult.isOk) {
+                    showError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้: " + (initResult.error?.message || 'Unknown error'));
+                    return;
+                }
+                
+                console.log('✅ Data SDK เชื่อมต่อสำเร็จ');
+            } catch (error) {
+                console.error('Data SDK initialization error:', error);
+                showError("เกิดข้อผิดพลาดในการเชื่อมต่อฐานข้อมูล: " + error.message);
                 return;
             }
 
             // Initialize Element SDK
             if (window.elementSdk) {
-                await window.elementSdk.init({
-                    defaultConfig,
-                    render: async (config) => {
-                        document.getElementById('system-title').textContent = config.system_title || defaultConfig.system_title;
-                    },
-                    mapToCapabilities: (config) => ({
-                        recolorables: [],
-                        borderables: [],
-                        fontEditable: undefined,
-                        fontSizeable: undefined
-                    }),
-                    mapToEditPanelValues: (config) => new Map([
-                        ["system_title", config.system_title || defaultConfig.system_title],
-                        ["company_name", config.company_name || defaultConfig.company_name]
-                    ])
-                });
+                try {
+                    await window.elementSdk.init({
+                        defaultConfig,
+                        render: async (config) => {
+                            const titleElement = document.getElementById('system-title');
+                            if (titleElement) {
+                                titleElement.textContent = config.system_title || defaultConfig.system_title;
+                            }
+                        },
+                        mapToCapabilities: (config) => ({
+                            recolorables: [],
+                            borderables: [],
+                            fontEditable: undefined,
+                            fontSizeable: undefined
+                        }),
+                        mapToEditPanelValues: (config) => new Map([
+                            ["system_title", config.system_title || defaultConfig.system_title],
+                            ["company_name", config.company_name || defaultConfig.company_name]
+                        ])
+                    });
+                    console.log('✅ Element SDK เชื่อมต่อสำเร็จ');
+                } catch (error) {
+                    console.warn('Element SDK initialization failed:', error);
+                }
             }
         }
 
@@ -932,6 +962,13 @@
                     return;
                 }
 
+                // Check if Data SDK is available
+                if (!window.dataSdk || !window.dataSdk.create) {
+                    hideLoading();
+                    showError("ระบบฐานข้อมูลไม่พร้อม กรุณารีเฟรชหน้าเว็บแล้วลองใหม่");
+                    return;
+                }
+
                 // Save to local Data SDK first
                 console.log('กำลังบันทึกข้อมูลใน Canva Sheet...');
                 const result = await window.dataSdk.create(recordData);
@@ -1096,23 +1133,33 @@
 
         // Update status
         async function updateStatus(recordId, newStatus) {
+            if (!window.dataSdk || !window.dataSdk.update) {
+                showError("ระบบฐานข้อมูลไม่พร้อม");
+                return;
+            }
+            
             const record = currentRecords.find(r => r.__backendId === recordId);
             if (record) {
                 record.approvalStatus = newStatus;
                 const result = await window.dataSdk.update(record);
                 if (!result.isOk) {
-                    showError("ไม่สามารถอัปเดตสถานะได้");
+                    showError("ไม่สามารถอัปเดตสถานะได้: " + (result.error?.message || 'Unknown error'));
                 }
             }
         }
 
         // Delete record
         async function deleteRecord(recordId) {
+            if (!window.dataSdk || !window.dataSdk.delete) {
+                showError("ระบบฐานข้อมูลไม่พร้อม");
+                return;
+            }
+            
             const record = currentRecords.find(r => r.__backendId === recordId);
             if (record) {
                 const result = await window.dataSdk.delete(record);
                 if (!result.isOk) {
-                    showError("ไม่สามารถลบข้อมูลได้");
+                    showError("ไม่สามารถลบข้อมูลได้: " + (result.error?.message || 'Unknown error'));
                 }
             }
         }
@@ -1148,7 +1195,13 @@
         // Confirm clear all data
         async function confirmClearAll() {
             // Remove confirmation modal
-            document.querySelector('.fixed.inset-0').remove();
+            const modal = document.querySelector('.fixed.inset-0');
+            if (modal) modal.remove();
+            
+            if (!window.dataSdk || !window.dataSdk.delete) {
+                showError("ระบบฐานข้อมูลไม่พร้อม");
+                return;
+            }
             
             showLoading();
             
@@ -1158,9 +1211,15 @@
                 
                 // Delete all records one by one
                 for (const record of currentRecords) {
-                    const result = await window.dataSdk.delete(record);
-                    if (result.isOk) {
-                        deletedCount++;
+                    try {
+                        const result = await window.dataSdk.delete(record);
+                        if (result.isOk) {
+                            deletedCount++;
+                        } else {
+                            console.warn('Failed to delete record:', record.__backendId, result.error);
+                        }
+                    } catch (deleteError) {
+                        console.error('Delete error for record:', record.__backendId, deleteError);
                     }
                 }
                 
@@ -1944,8 +2003,25 @@ ini_set('max_execution_time', '60');
         // Make test function available globally for console testing
         window.testSimpleRecord = testSimpleRecord;
 
+        // Show SDK loading status
+        function showSDKStatus() {
+            const statusDiv = document.getElementById('system-status');
+            if (statusDiv) {
+                if (!window.dataSdk) {
+                    statusDiv.className = 'mt-6 p-4 bg-yellow-100 border border-yellow-300 rounded-lg text-center';
+                    statusDiv.innerHTML = '<span class="text-yellow-800 font-medium">🔄 กำลังโหลดระบบ...</span>';
+                } else {
+                    statusDiv.className = 'mt-6 p-4 bg-green-100 border border-green-300 rounded-lg text-center';
+                    statusDiv.innerHTML = '<span class="text-green-800 font-medium">✅ ระบบพร้อมใช้งาน</span>';
+                }
+            }
+        }
+
         // Initialize app when page loads
-        document.addEventListener('DOMContentLoaded', initializeApp);
+        document.addEventListener('DOMContentLoaded', () => {
+            showSDKStatus();
+            initializeApp();
+        });
     </script>
- <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'991df62cc6518ad1',t:'MTc2MTAyMDQxOC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+ <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'991f33112705894b',t:'MTc2MTAzMzM5OC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
